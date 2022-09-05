@@ -1,0 +1,6 @@
+env/
+*.pyc
+
+out/
+.DS_Store
+.vscode/
