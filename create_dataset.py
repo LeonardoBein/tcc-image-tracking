@@ -20,7 +20,7 @@ here = Path(__file__).parent
 pathResults = here / "out/"
 imageTrackings = [
     here / "assets/image-tracking1.png",
-    here / "assets/image-tracking1.png"
+    here / "assets/image-tracking2.png"
 ]
 # end config
 
@@ -28,7 +28,7 @@ imageTrackings = [
 if not pathResults.exists():
     pathResults.mkdir()
 else:
-    files = glob.glob(str(pathResults / "*"))
+    files = glob.glob(str(pathResults / "*/*"))
     toRemoveString = input(f"to remove {len(files)} files: [N/s]")
 
     toRemove = True if toRemoveString.upper() == "S" else False
@@ -55,11 +55,16 @@ for index, imagePath in enumerate(imageTrackings):
     it = ImageTransformer(str(imagePath))
 
     for degZ in rangeZ:
+        imagePathSave = pathResults / f"image{index}_z{degZ}"
+
+        if not imagePathSave.exists():
+            imagePathSave.mkdir()
+
         for degX in rangeX:
             for degY in rangeY:
                 start_time = time.time()
                 rotatedImg = it.rotateAlongAxis(phi=degY, theta=degX, gamma=degZ)
-                imageNameSave = str(pathResults / f"image{index}_z{degZ}_x{degX}_y{degY}.png")
+                imageNameSave = str(imagePathSave / f"image{index}_z{degZ}_x{degX}_y{degY}.png")
                 cv.imwrite(imageNameSave, rotatedImg)
                 end_time = time.time()
                 
