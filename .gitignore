@@ -2,5 +2,6 @@ env/
 *.pyc
 
 out/
+images/
 .DS_Store
 .vscode/

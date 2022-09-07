@@ -1,81 +1,132 @@
 from pathlib import Path
-import time
-from utils import ImageTransformer, humanizeBytes, humanizeTime
+import random
+from typing import Tuple
+from uuid import uuid4
 import cv2 as cv
-import glob
 import numpy as np
-import os
-# import argparse
+import argparse
+from utils import mergeImages, ImageTransformer
 
-# ap = argparse.ArgumentParser()
-# ap.add_argument("--rm", type=str, help="image base")
-# ap.add_argument("-d", "--data", type=str, help="imagens para inserir")
-# ap.add_argument("-s", "--save", type=str, help="diretorio para salvar o resultado")
-# args = vars(ap.parse_args())
-
-
+ap = argparse.ArgumentParser()
+ap.add_argument("-i", "--image", type=str, help="image base", required=True)
+ap.add_argument("-d", "--destination", type=str, help="image destination", required=True)
+ap.add_argument("-n", type=str, help="repeat operation", default=1)
+args = vars(ap.parse_args())
 
 # config
 here = Path(__file__).parent
-pathResults = here / "out/"
-imageTrackings = [
-    here / "assets/image-tracking1.png",
-    here / "assets/image-tracking2.png"
-]
+config = {
+    "pathResults" : Path(args['destination']),
+    "pathImageTrackingResults" : here / "out/image_tracking/",
+    "imageTrackings" : [
+        here / "assets/image-tracking1.png",
+        here / "assets/image-tracking2.png"
+    ],
+    "rangeZ" : (-45, 45),
+    "rangeX" : (-45, 45),
+    "rangeY" : (-45, 45),
+}
 # end config
 
+imageBase = cv.imread(args['image'], cv.IMREAD_UNCHANGED)
 
-if not pathResults.exists():
-    pathResults.mkdir()
-else:
-    files = glob.glob(str(pathResults / "*/*"))
-    toRemoveString = input(f"to remove {len(files)} files: [N/s]")
+def normalization(x, xMin, xMax):
+    return (x - xMin) / (xMax - xMin)
 
-    toRemove = True if toRemoveString.upper() == "S" else False
-    if toRemove is True:
-        for f in files:
-            print(f"Remove: {f}")
-            os.remove(f)
+def getImageTracking(
+    imagePath: Path, imagePathSave: Path, deg: Tuple[int, int, int],
+) -> cv.Mat:
 
-rangeZ = range(-90, 90)
-rangeX = range(-90, 90)
-rangeY = range(-90, 90)
+    imageName =  str(imagePathSave)
 
-totalFiles = 2 * (len(rangeX) * len(rangeZ) * len(rangeY))
-totalSize = totalFiles * 25000
-print(f"totalFiles={totalFiles}")
-print(f"totalSize={humanizeBytes(totalSize)}")
+    if not imagePathSave.parent.exists():
+        imagePathSave.parent.mkdir(parents=True)
 
-pause = input(f"press enter to start process...")
+    if not imagePathSave.exists():
+        it = ImageTransformer(str(imagePath))
+        rotatedImg = it.rotateAlongAxis(phi=deg[0], theta=deg[1], gamma=deg[2])
+        cv.imwrite(str(imagePathSave), rotatedImg)
+        return rotatedImg
+    
+    return cv.imread(imageName, cv.IMREAD_UNCHANGED)
 
-indexFiles = 0
-averageCreateFile = 0
+def run(imageBase: cv.Mat):
+    global config
 
-for index, imagePath in enumerate(imageTrackings):
-    it = ImageTransformer(str(imagePath))
+    y_shape, x_shape, _ = imageBase.shape
 
-    for degZ in rangeZ:
-        imagePathSave = pathResults / f"image{index}_z{degZ}"
+    areaUsed = np.zeros((imageBase.shape[0], imageBase.shape[1]))
 
-        if not imagePathSave.exists():
-            imagePathSave.mkdir()
+    labels = []
+    numberOfImages = random.randint(5, 15)
 
-        for degX in rangeX:
-            for degY in rangeY:
-                start_time = time.time()
-                rotatedImg = it.rotateAlongAxis(phi=degY, theta=degX, gamma=degZ)
-                imageNameSave = str(imagePathSave / f"image{index}_z{degZ}_x{degX}_y{degY}.png")
-                cv.imwrite(imageNameSave, rotatedImg)
-                end_time = time.time()
-                
-                indexFiles += 1
-                averageCreateFile = (averageCreateFile + float(end_time - start_time))/2
-
-        percentComplete = np.round((indexFiles / totalFiles) * 100, 2)
-        speedString = humanizeTime(averageCreateFile, 's')
-        timeComplete = humanizeTime(averageCreateFile * (totalFiles - indexFiles), "s")
-        print(f"Complete {percentComplete}%\tspeed={speedString}\ttimeComplete={timeComplete}")
+    for n in range(numberOfImages):
+        index = random.randint(0, len(config["imageTrackings"]) - 1)
         
+        labelName = str(index)
+        imageTracking = config["imageTrackings"][index]
 
+        degX = random.randint(config["rangeX"][0], config["rangeX"][1])
+        degY = random.randint(config["rangeY"][0], config["rangeY"][1])
+        degZ = random.randint(config["rangeZ"][0], config["rangeZ"][1])
 
+        imageFile = config["pathImageTrackingResults"] / f"image{index}_z{degZ}/image{index}_z{degZ}_x{degX}_y{degY}.png"
+
+        # phi=degY, theta=degX, gamma=degZ
+        deg = (
+            degY,
+            degX,
+            degZ,
+        )
+
+        imageTrackingMat = getImageTracking(imageTracking, imageFile, deg)
+
+        size = random.randint(50, 100)
+
+        brighter = random.randint(1, 100)
+
+        intensity = np.ones(imageTrackingMat.shape, dtype='uint8') * brighter
+        imageTrackingMat = cv.subtract(imageTrackingMat, intensity)
+
+        position = [ random.randint(0, y_shape - size), random.randint(0, x_shape - size) ]
+
+        areaPosition = np.zeros(areaUsed.shape)
+        areaPosition[position[0]: position[0]+size, position[1]: position[1]+size] = 1
+
+        while ( (areaPosition == 1) & (areaUsed == 1) ).any():
+            position[0] = random.randint(0, y_shape - size)
+            position[1] = random.randint(0, x_shape - size)
+            areaPosition[:,:] = 0
+            areaPosition[position[0]: position[0]+size, position[1]: position[1]+size] = 1
         
+        imageBase = mergeImages(imageBase, imageTrackingMat, (size, size), position)
+        areaUsed[position[0]: position[0]+size, position[1]: position[1]+size] = 1
+
+        x_center = normalization( position[1] + size/2, 0, x_shape)
+        y_center = normalization( position[0] + size/2, 0, y_shape)
+        width = normalization(size, 0, x_shape)
+        height = normalization(size, 0, y_shape)
+
+        labels.append(f'{labelName} {x_center} {y_center} {width} {height}')
+
+
+    hashString = str(uuid4())
+
+    fileResultImage = config["pathResults"] / f"images/image-{hashString}.jpeg"
+    fileResultLabel = config["pathResults"] / f"labels/image-{hashString}.txt"
+
+    if not fileResultImage.parent.exists():
+        fileResultImage.parent.mkdir()
+    if not fileResultLabel.parent.exists():
+        fileResultLabel.parent.mkdir()
+    
+    print(f"Created '{str(fileResultImage)}'")
+
+    cv.imwrite(str(fileResultImage), imageBase)
+    with open(str(fileResultLabel), 'w') as f:
+        f.write("\n".join(labels))
+
+if __name__ == "__main__":
+
+    for i in range(int(args["n"])):
+        run(imageBase)
